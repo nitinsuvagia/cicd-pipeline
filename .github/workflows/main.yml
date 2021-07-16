@@ -1,0 +1,59 @@
+name: CI/CD
+
+on:
+  push:
+    branches:
+    - main
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        dotnet-version: [2.2.x]
+
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install dependencies
+        run: dotnet restore
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+        
+      - name: Check Path
+        run: pwd
+        
+      - name: Publish
+        run: dotnet publish /home/runner/work/cicd-pipeline/cicd-pipeline/sample.csproj -c Release -r linux-x64 -o ./Deploy_API
+        
+      #- name: Change Directory
+      #  run: CD /home/runner/Deploy_API
+        
+      - name: Generate deployment package
+        run: zip -r deploy.zip ./Deploy_API/
+        #run: zip ../deploy.zip -r -j ./...
+
+      - name: Get timestamp
+        uses: gerred/actions/current-time@master
+        id: current-time
+
+      - name: Run string replace
+        uses: frabert/replace-string-action@master
+        id: format-time
+        with:
+          pattern: '[:\.]+'
+          string: "${{ steps.current-time.outputs.time }}"
+          replace-with: '-'
+          flags: 'g'
+        
+      - name: Beanstalk Deploy for API
+        uses: einaregilsson/beanstalk-deploy@v16
+        with:
+          aws_access_key: ${{ secrets.AWS_ACCESS_KEY }}
+          aws_secret_key: ${{ secrets.AWS_SECRETS_KEY }}
+          application_name: cicd
+          environment_name: cicd-test-env
+          region: ap-south-1
+          version_label: "loclpms-api-V-${{ steps.format-time.outputs.replaced }}"
+          deployment_package: deploy.zip
+
+      - name: Deployed!
+        run: echo API deployed to Elastic Beanstalk
